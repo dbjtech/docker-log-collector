@@ -1,0 +1,17 @@
+{
+  "name": "docker-log-collector",
+  "brickyard-module-type": "backend",
+  "version": "0.0.1",
+  "description": "backend for docker-log-collector",
+  "main": "index.js",
+  "author": "brickyard-developer",
+  "license": "ISC",
+  "dependencies": {
+    "dockerode": "^2.4.3",
+    "event-stream": "^3.3.4",
+    "lodash": "^4.17.4",
+    "moment": "^2.18.1",
+    "request": "^2.81.0",
+    "request-promise": "^4.2.1"
+  }
+}

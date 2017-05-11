@@ -1,0 +1,4 @@
+.dockerignore
+dockerfile
+.git
+node_modules
