@@ -18,7 +18,7 @@ docker run -l dockerLogCollector.logAppName=aNodeJSApp node:alpine node -e "setI
 
 Check the following code
 
-```
+```js
 const config = _.defaults({
 	verbose: process.env.VERBOSE,
 	solrHost: process.env.SOLR_HOST,
