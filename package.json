@@ -10,7 +10,7 @@
     "dockerode": "^2.4.3",
     "event-stream": "^3.3.4",
     "lodash": "^4.17.4",
-    "moment": "^2.18.1",
+    "moment-timezone": "^0.5.13",
     "request": "^2.81.0",
     "request-promise": "^4.2.1"
   }

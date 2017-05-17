@@ -5,7 +5,7 @@ Collect all logs from other docker containers with label dockerLogCollector.logA
 ## Usage
 
 ```
-docker run -it -v /var/run/docker.sock:/var/run/docker.sock --link solrContainerNameOrId:solr -e SOLR_PORT=80 -e SOLR_HOST=solr dbjtech/docker-log-collector
+docker run -it -v /var/run/docker.sock:/var/run/docker.sock --link solrContainerNameOrId:solr -e TZ="Asia/Shanghai" -e SOLR_PORT=80 -e SOLR_HOST=solr dbjtech/docker-log-collector
 ```
 
 then start other docker
@@ -36,6 +36,16 @@ const config = _.defaults({
 	logMaxCount: 1000, // post a doc when collect more than logMaxCount lines
 	logMaxTime: 30000, // post a doc when now > lastPostTime + logMaxTime, unit ms
 })
+```
+
+## Time parser
+
+Collector use the following code to parse log time, Using **TZ** env variable to indicate timezone.
+
+If the log contain no time string with the format, it use localtime.
+
+```js
+moment.tz(aTimeString, 'YYMMDD HH:mm:ss', process.env.TZ || 'UTC')
 ```
 
 ## Notice

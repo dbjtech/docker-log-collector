@@ -2,7 +2,7 @@ const events = require('events')
 const _ = require('lodash')
 const es = require('event-stream')
 const Dockerode = require('dockerode')
-const moment = require('moment')
+const moment = require('moment-timezone')
 const request = require('request-promise')
 
 const config = _.defaults({
@@ -95,7 +95,7 @@ class LogSubmitter extends ContainerTailer {
 		doc.contentindex = lines
 
 		const tMatch = lines.match(/\d{6} \d{2}:\d{2}:\d{2}/)
-		const tMoment = tMatch ? moment(tMatch[0], 'YYMMDD HH:mm:ss') : moment()
+		const tMoment = tMatch ? moment.tz(tMatch[0], 'YYMMDD HH:mm:ss', process.env.TZ || 'UTC') : moment()
 		doc.dateint = tMoment.unix()
 
 		doc.types = this.options.logAppName
@@ -119,12 +119,12 @@ class LogSubmitter extends ContainerTailer {
 const allTasks = {}
 async function tailAndSubmit(container) {
 	if (allTasks[container.Id]) return null
+	allTasks[container.Id] = true
 	console.log(`tail ${container.Id} ${config.logHostName} ${container.Labels['dockerLogCollector.logAppName']}`)
 	const submitter = new LogSubmitter({
 		logAppName: container.Labels['dockerLogCollector.logAppName'],
 	})
 	await submitter.start(container.Id)
-	allTasks[container.Id] = true
 	submitter.on('close', (e) => {
 		console.log(`Container ${container.Id} stop.`, e ? e.message : '')
 		delete allTasks[container.Id]
