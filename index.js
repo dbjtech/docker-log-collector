@@ -27,7 +27,7 @@ class ContainerTailer extends events.EventEmitter {
 	async start(id) {
 		this.docker = new Dockerode()
 		const container = this.docker.getContainer(id)
-		const stream = await container.logs({ follow: true, stdout: true, since: moment().unix() })
+		const stream = await container.logs({ follow: true, stdout: true, stderr: true, since: moment().unix() })
 		stream
 			.pipe(es.map((data, cb) => cb(null, data.slice(8))))
 			.pipe(es.split())
