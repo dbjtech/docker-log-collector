@@ -135,7 +135,7 @@ async function tailAndSubmit(container) {
 async function listAndTailContainer() {
 	const docker = new Dockerode()
 	const containers = await docker.listContainers({ filters: { label: ['dockerLogCollector.logAppName'] } })
-	const tasks = _.map(containers, e => tailAndSubmit(e))
+	const tasks = _.map(_.filter(containers, e => e.Labels['dockerLogCollector.logAppName']), e => tailAndSubmit(e).catch(err => console.log(err.message)))
 	await Promise.all(tasks)
 }
 
