@@ -24,10 +24,15 @@ const config = _.defaults({
 })
 
 class ContainerTailer extends events.EventEmitter {
-	async start(id) {
+	constructor(id) {
+		super()
+		this.id = id
+		this.shortId = id.substring(0, 5)
+	}
+	async start() {
 		this.docker = new Dockerode()
-		const container = this.docker.getContainer(id)
-		const stream = await container.logs({ follow: true, stdout: true, stderr: true, since: moment().unix() })
+		const container = this.docker.getContainer(this.id)
+		const stream = await container.logs({ follow: true, stdout: true, stderr: true, tail: 0 })
 		stream
 			.pipe(es.map((data, cb) => cb(null, data.slice(8))))
 			.pipe(es.split())
@@ -55,8 +60,8 @@ class ContainerTailer extends events.EventEmitter {
  *     logAppName: program name to be indexed
  */
 class LogSubmitter extends ContainerTailer {
-	constructor(options) {
-		super()
+	constructor(id, options) {
+		super(id)
 		this.options = _.defaults(options, config)
 		if (!this.options.logAppName) throw new Error('logAppName must set')
 		this.logCache = []
@@ -78,7 +83,7 @@ class LogSubmitter extends ContainerTailer {
 			if (!line) return null
 			this.logCache.push(line)
 			if (this.options.verbose) {
-				console.log(`[${this.options.logHostName}][${this.options.logAppName}]${line}`)
+				console.log(`[${this.options.logHostName}][${this.options.logAppName}][${this.shortId}]${line}`)
 			}
 			if (this.logCache.length < this.options.logMaxCount &&
 				now < this.lastCommitTime + this.options.logMaxTime) {
@@ -109,9 +114,9 @@ class LogSubmitter extends ContainerTailer {
 		this.logCache = []
 		this.lastCommitTime = now
 		return request(options).then((resp) => {
-			console.log(`[${this.options.logHostName}][${this.options.logAppName}]${count} docs submit as ${doc.id} ${JSON.stringify(resp)}`)
+			console.log(`[${this.options.logHostName}][${this.options.logAppName}][${this.shortId}]${count} docs submit as ${doc.id} ${JSON.stringify(resp)}`)
 		}).catch((err) => {
-			console.error(`[${this.options.logHostName}][${this.options.logAppName}]${count} docs submit as ${doc.id} failed. ${err.message || err}`)
+			console.error(`[${this.options.logHostName}][${this.options.logAppName}][${this.shortId}]${count} docs submit as ${doc.id} failed. ${err.message || err}`)
 		})
 	}
 }
@@ -121,10 +126,10 @@ async function tailAndSubmit(container) {
 	if (allTasks[container.Id]) return null
 	allTasks[container.Id] = true
 	console.log(`tail ${container.Id} ${config.logHostName} ${container.Labels['dockerLogCollector.logAppName']}`)
-	const submitter = new LogSubmitter({
+	const submitter = new LogSubmitter(container.Id, {
 		logAppName: container.Labels['dockerLogCollector.logAppName'],
 	})
-	await submitter.start(container.Id)
+	await submitter.start()
 	submitter.on('close', (e) => {
 		console.log(`Container ${container.Id} stop.`, e ? e.message : '')
 		delete allTasks[container.Id]
