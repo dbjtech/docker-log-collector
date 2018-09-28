@@ -13,6 +13,7 @@ const config = _.defaults({
 	logHostName: process.env.LOG_HOST_NAME,
 	logMaxCount: process.env.LOG_MAX_COUNT,
 	logMaxTime: process.env.LOG_MAX_TIME,
+	watchdogResetTime: process.env.WATCHDOG_RESET_TIME,
 }, {
 	verbose: false, // print the logs it collects
 	solrHost: 'localhost', // solr host
@@ -21,34 +22,53 @@ const config = _.defaults({
 	logHostName: 'UNKNOW_HOST', // machine name set to the doc
 	logMaxCount: 1000, // post a doc when collect more than logMaxCount lines
 	logMaxTime: 30000, // post a doc when now > lastPostTime + logMaxTime, unit ms
+	watchdogResetTime: 0, // close tailer when slient
 })
 
 class ContainerTailer extends events.EventEmitter {
-	constructor(id) {
+	constructor(id, options) {
 		super()
 		this.id = id
 		this.shortId = id.substring(0, 5)
+		this.options = _.defaults(options, config)
+		this.stream = null
+		const t = Number(this.options.watchdogResetTime)
+		this.feedWatchdog = t ? _.debounce(this.close, t) : () => {}
 	}
+
 	async start() {
 		this.docker = new Dockerode()
 		const container = this.docker.getContainer(this.id)
-		const stream = await container.logs({ follow: true, stdout: true, stderr: true, tail: 0 })
-		stream
+		this.stream = await container.logs({ follow: true, stdout: true, stderr: true, tail: 0 })
+		this.stream
 			.pipe(es.map((data, cb) => cb(null, data.slice(8))))
 			.pipe(es.split())
 			.pipe(es.map((line, cb) => {
+				if (this.isClosed) {
+					console.log(`[${this.shortId}]recv data after close`)
+				} else {
+					this.feedWatchdog()
+				}
 				this.emit('log', line)
 				return cb()
 			}))
-		stream.on('error', (e) => {
-			this.emit('close', e)
-			this.removeAllListeners()
-		})
-		stream.on('end', () => {
-			this.emit('close')
-			this.removeAllListeners()
-		})
+		const close = this.close.bind(this)
+		this.stream.on('error', close)
+		this.stream.on('end', close)
 		return this
+	}
+
+	close(err) {
+		if (this.stream) {
+			this.stream.destroy()
+			this.stream = null
+		}
+		this.emit('close', err)
+		this.removeAllListeners()
+	}
+
+	get isClosed() {
+		return this.stream === null
 	}
 }
 
@@ -61,8 +81,7 @@ class ContainerTailer extends events.EventEmitter {
  */
 class LogSubmitter extends ContainerTailer {
 	constructor(id, options) {
-		super(id)
-		this.options = _.defaults(options, config)
+		super(id, options)
 		if (!this.options.logAppName) throw new Error('logAppName must set')
 		this.logCache = []
 		this.lastCommitTime = Date.now()
@@ -85,8 +104,7 @@ class LogSubmitter extends ContainerTailer {
 			if (this.options.verbose) {
 				console.log(`[${this.options.logHostName}][${this.options.logAppName}][${this.shortId}]${line}`)
 			}
-			if (this.logCache.length < this.options.logMaxCount &&
-				now < this.lastCommitTime + this.options.logMaxTime) {
+			if (this.logCache.length < this.options.logMaxCount && now < this.lastCommitTime + this.options.logMaxTime) {
 				return null
 			}
 		}
@@ -122,6 +140,9 @@ class LogSubmitter extends ContainerTailer {
 }
 
 const allTasks = {}
+let listAndTailContainer
+const latc = () => listAndTailContainer().catch(e => console.error(e.message || e))
+
 async function tailAndSubmit(container) {
 	if (allTasks[container.Id]) return null
 	allTasks[container.Id] = true
@@ -130,17 +151,19 @@ async function tailAndSubmit(container) {
 		logAppName: container.Labels['dockerLogCollector.logAppName'],
 	})
 	await submitter.start()
-	submitter.on('close', (e) => {
-		console.log(`Container ${container.Id} stop.`, e ? e.message : '')
+	submitter.on('close', (err) => {
+		console.log(`Container ${container.Id} stop.`, err ? err.message : '')
 		delete allTasks[container.Id]
+		setTimeout(latc, 2000)
 	})
 	return submitter
 }
 
-async function listAndTailContainer() {
+listAndTailContainer = async function () {
+	console.log('listAndTailContainer')
 	const docker = new Dockerode()
 	const containers = await docker.listContainers({ filters: { label: ['dockerLogCollector.logAppName'] } })
-	const tasks = _.map(_.filter(containers, e => e.Labels['dockerLogCollector.logAppName']), e => tailAndSubmit(e).catch(err => console.log(err.message)))
+	const tasks = _.map(_.filter(containers, e => e.Labels['dockerLogCollector.logAppName']), e => tailAndSubmit(e).catch(err => console.log(err.message || e)))
 	await Promise.all(tasks)
 }
 
@@ -150,9 +173,9 @@ async function listernDockerEvents() {
 	const stream = await docker.getEvents({ filters: { type: ['container'], event: ['start'] } })
 	stream.on('data', () => {
 		console.log('new container start')
-		listAndTailContainer().catch(e => console.error(e.message || e))
+		latc()
 	})
 }
 
 listernDockerEvents().catch(e => console.error(e.message || e))
-listAndTailContainer().catch(e => console.error(e.message || e))
+latc()
